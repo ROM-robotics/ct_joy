@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ct_joy</name>
+  <version>0.2.0</version>
+  <description>Logitech F710 joystick control for PX4 SITL vehicles over ROS 2.</description>
+  <maintainer email="maintainer@example.com">ct_joy maintainers</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>px4_msgs</depend>
+  <exec_depend>joy</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
