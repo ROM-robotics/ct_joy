@@ -1,0 +1,17 @@
+ct_joy:
+  ros__parameters:
+    # this come from MPC_XY_VEL_MAX,
+    horizontal_speed: 12.0
+
+    # this come from MPC_Z_VEL_MAX_UP / MPC_Z_VEL_MAX_DN
+    z_vel_max_speed_up: 3.0
+    z_vel_max_speed_down: 1.5
+
+    # Maximum Yaw Rate Limit (Degree per second)
+    # Auto, Offboard, Mission Mode အတွက် Maximum Yaw Rate Limit
+    # this come from MPC_YAWRAUTO_MAX
+    mpc_yawrate_auto_max: 60.0000
+
+    # Manual Mode အတွက် Maximum Yaw Rate Limit
+    # this come from MPC_MAN_Y_MAX
+    mpc_man_y_max: 150.0000

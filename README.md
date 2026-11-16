@@ -70,6 +70,29 @@ ros2 run ct_joy ct_joy --ros-args \
 
 Parameter များတွင် `joy_topic`, `publish_rate_hz`, `joy_timeout_sec`, `takeoff_altitude_m`, `max_horizontal_speed_mps`, `max_vertical_speed_mps`, `max_yaw_rate_rps`, `altitude_trim_speed_mps`, `deadzone`, axis index များ၊ D-pad axis၊ `button_arm`, `button_disarm`, `button_takeoff`, `button_land`, `target_system`, `target_component` နှင့် `invert_*_axis` flag များ ပါဝင်သည်။ `target_system` ကို သတ်မှတ်မထားလျှင် (`<= 0`) node namespace ၏ နောက်ဆုံးဂဏန်း (ဥပမာ `/px4_1` → instance 1) ကိုသုံး၍ `instance + 1` အဖြစ် အလိုအလျောက် တွက်သည် — ဤတန်ဖိုးသည် ယာဉ်၏ PX4 `MAV_SYS_ID` parameter နှင့် ကိုက်ညီရမည်။ မကိုက်ညီပါက PX4 က vehicle command များကို log/ack မထုတ်ဘဲ တိတ်တဆိတ် လျစ်လျူရှုမည်ဖြစ်ကြောင်း သတိပြုပါ။
 
+## $\color{red}{\text{Vehicle speed limits (config/params.yaml)}}$
+
+`ct_joy` node သည် [config/params.yaml](./config/params.yaml) ကို `ament_index_cpp::get_package_share_directory`
+ကနေ **C++ ထဲမှာ တိုက်ရိုက် ဖတ်ပြီး** PX4 `MPC_*` parameter တွေနဲ့ ကိုက်ညီတဲ့
+vehicle speed/yaw-rate limit တွေကို enforce လုပ်ပါတယ် (`ct_follower_png` ရဲ့
+YAML-direct-load policy အတိုင်း)။ ဒီ field 5 ခုကို **launch file ကနေ (သို့)
+`--ros-args -p` နဲ့ override လို့ မရပါ** — override ကြိုးစားရင် node က
+immediately error log ထုတ်ပြီး exit ဖြစ်မည် — `config/params.yaml` ကို
+တိုက်ရိုက် edit ဖို့ပဲ လိုအပ်ပါတယ်။
+
+| Parameter               | Unit  | Used for                                                              |
+|--------------------------|-------|------------------------------------------------------------------------|
+| `horizontal_speed`       | m/s   | (MPC_XY_VEL_MAX) `max_horizontal_speed_mps` parameter ရဲ့ ceiling — ဒီထက် ကျော်မသွားအောင် clamp။ |
+| `z_vel_max_speed_up`     | m/s   | (MPC_Z_VEL_MAX_UP) joystick ဖြင့် တက်တဲ့ (climb) altitude rate ceiling — `vz_`/`dpad_altitude_rate_` positive တန်ဖိုးများကို clamp။ |
+| `z_vel_max_speed_down`   | m/s   | (MPC_Z_VEL_MAX_DN) ဆင်းတဲ့ (descend) altitude rate ceiling — negative တန်ဖိုးများကို clamp။ |
+| `mpc_yawrate_auto_max`   | deg/s | (MPC_YAWRAUTO_MAX) Auto/Offboard mode yaw rate — YAML validate လုပ်ရုံပဲ ဖြစ်ပြီး ဒီ package ထဲမှာ မသုံးပါ (ct_searching_algorithms ရဲ့ autonomous search အတွက်)။ |
+| `mpc_man_y_max`          | deg/s | (MPC_MAN_Y_MAX) Manual mode yaw rate — joystick pilot ရဲ့ `max_yaw_rate_rps` parameter ceiling။ |
+
+`max_horizontal_speed_mps`/`max_yaw_rate_rps` ROS parameter တွေကို ဒီ YAML
+ceiling တွေထက် ကျော်လွန် override လုပ်ထားရင်တောင် node ထဲမှာ `std::min()` နဲ့
+clamp လုပ်ပြီး၊ ဒီ clamp လုပ်ထားတဲ့ final value ကိုပဲ `ros2 param get` နဲ့
+ပြန်တွေ့ရအောင် parameter server ကိုပါ update လုပ်ပေးပါတယ်။
+
 ## $\color{red}{\text{PX4 မှတ်ချက်များ}}$
 
 Node သည် `OffboardControlMode` နှင့် `TrajectorySetpoint` ကို 20 Hz ဖြင့် ဆက်တိုက်ထုတ်လွှင့်သည်။ ခလုတ်တောင်းဆိုမှုတစ်ခုသည် PX4 ၏ Offboard mode နှင့် arm command များ မပို့မီ setpoint ကို အနည်းဆုံး တစ်စက္ကန့်ကြာ ထုတ်လွှင့်ထားရန် စောင့်သည်။ Offboard mode အသုံးပြုရာတွင် ROS 2/DDS ချိတ်ဆက်မှု ကျန်းမာစွာရှိနေရမည်။ Hardware တွင် မသုံးမီ PX4 failsafe parameter များကို သတ်မှတ်ပြီး SITL တွင် အပြုအမူကို စစ်ဆေးပါ။
