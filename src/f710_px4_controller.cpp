@@ -53,9 +53,9 @@ public:
     invert_vy_axis_ = declare_parameter<bool>("invert_vy_axis", true);
     invert_vz_axis_ = declare_parameter<bool>("invert_vz_axis", false);
     invert_yaw_axis_ = declare_parameter<bool>("invert_yaw_axis", true);
-    axis_vy_ = declare_parameter<int>("axis_vy", 0);
+    axis_vy_ = declare_parameter<int>("axis_vy", 2);
     axis_vx_ = declare_parameter<int>("axis_vx", 3);
-    axis_yaw_ = declare_parameter<int>("axis_yaw", 2);
+    axis_yaw_ = declare_parameter<int>("axis_yaw", 0);
     axis_vz_ = declare_parameter<int>("axis_vz", 1);
     axis_dpad_vertical_ = declare_parameter<int>("axis_dpad_vertical", 7);
     button_arm_ = declare_parameter<int>("button_arm", 2);
@@ -129,6 +129,22 @@ private:
       return 0.0;
     }
     return std::copysign((std::abs(value) - deadzone_) / (1.0 - deadzone_), value);
+  }
+
+  // Rotates a body-frame velocity (vx_body = forward along the camera/heading
+  // direction, vy_body = right, relative to the vehicle's nose) into the PX4
+  // local NED frame (x = North, y = East) using the current heading. This is
+  // what keeps "forward" always pointing wherever the camera/nose is aimed,
+  // regardless of the vehicle's absolute compass heading. It is a yaw-angle
+  // rotation, not a NED<->ENU convention swap (ENU/NED differ by a fixed axis
+  // remap+flip and do not depend on heading).
+  static void rotate_body_to_ned(
+    double vx_body, double vy_body, double yaw_rad, double & vx_ned, double & vy_ned)
+  {
+    const double c = std::cos(yaw_rad);
+    const double s = std::sin(yaw_rad);
+    vx_ned = vx_body * c - vy_body * s;
+    vy_ned = vx_body * s + vy_body * c;
   }
 
   static bool button_pressed(const std::vector<int32_t> & buttons, int index)
@@ -255,7 +271,10 @@ private:
     setpoint.timestamp = mode.timestamp;
     const auto nan = std::numeric_limits<float>::quiet_NaN();
     setpoint.position = {nan, nan, static_cast<float>(-altitude_m_)};
-    setpoint.velocity = {static_cast<float>(vx_), static_cast<float>(vy_), nan};
+    double vx_ned = 0.0;
+    double vy_ned = 0.0;
+    rotate_body_to_ned(vx_, vy_, yaw_rad_, vx_ned, vy_ned);
+    setpoint.velocity = {static_cast<float>(vx_ned), static_cast<float>(vy_ned), nan};
     setpoint.yaw = static_cast<float>(yaw_rad_);
     setpoint.yawspeed = nan;
     setpoint_publisher_->publish(setpoint);
@@ -322,9 +341,9 @@ private:
   bool invert_vy_axis_{true};
   bool invert_vz_axis_{false};
   bool invert_yaw_axis_{true};
-  int axis_vy_{0};
+  int axis_vy_{2};
   int axis_vx_{3};
-  int axis_yaw_{2};
+  int axis_yaw_{0};
   int axis_vz_{1};
   int axis_dpad_vertical_{7};
   int button_arm_{2};
@@ -349,8 +368,8 @@ private:
   std::vector<int32_t> last_buttons_;
   double altitude_m_{0.0};
   double yaw_rad_{0.0};
-  double vx_{0.0};
-  double vy_{0.0};
+  double vx_{0.0};  // body-frame forward (heading-relative), rotated to NED before publish
+  double vy_{0.0};  // body-frame right (heading-relative), rotated to NED before publish
   double vz_{0.0};
   double yaw_rate_{0.0};
   double dpad_altitude_rate_{0.0};

@@ -4,18 +4,18 @@
 
 ## $\color{red}{\text{ထိန်းချုပ်မှု ခလုတ်များ}}$
 
-ပုံမှန် mapping သည် American hand (Mode 2) RC convention ကို အသုံးပြုထားသည်။ Axis sign များသည် joystick driver/hardware အလိုက် ကွဲပြားနိုင်သဖြင့် သင့်စက်တွင် `ros2 topic echo /joy` ဖြင့် စစ်ဆေးပြီး `invert_*_axis` parameter များဖြင့် ချိန်ညှိပါ (ဤ repo တွင် စမ်းသပ်ထားသော Logitech Cordless RumblePad 2 အတွက် axis 0 နှင့် axis 2 (ဘယ်ညာ axis နှစ်ခု) ၏ LEFT သည် `+1.0`၊ axis 1 နှင့် axis 3 (အပေါ်အောက် axis နှစ်ခု) ၏ UP သည် `+1.0` ဖြစ်သည်)။
+Drone ၏ ရှေ့ဘက် (camera ဦးတည်ရာ) သည် လက်ရှိ heading ဖြစ်သည်။ ညာ stick သည် ထို heading ကို အခြေခံ၍ body-frame တွင် ရှေ့/နောက်/ဘေးတိုက် ရွေ့လျားမှုကို ထိန်းချုပ်ပြီး၊ ဘယ် stick သည် throttle နှင့် yaw ကို ထိန်းချုပ်သည် (American hand Mode 2 convention)။ Axis sign များသည် joystick driver/hardware အလိုက် ကွဲပြားနိုင်သဖြင့် သင့်စက်တွင် `ros2 topic echo /joy` ဖြင့် စစ်ဆေးပြီး `invert_*_axis` parameter များဖြင့် ချိန်ညှိပါ (ဤ repo တွင် စမ်းသပ်ထားသော Logitech Cordless RumblePad 2 အတွက် axis 0 နှင့် axis 2 (ဘယ်ညာ axis နှစ်ခု) ၏ LEFT သည် `+1.0`၊ axis 1 နှင့် axis 3 (အပေါ်အောက် axis နှစ်ခု) ၏ UP သည် `+1.0` ဖြစ်သည်)။
 
 | Input | လုပ်ဆောင်ချက် |
 |---|---|
 | ဘယ် stick အပေါ် (axis 1) | Throttle up — altitude setpoint တိုးသည် |
 | ဘယ် stick အောက် | Throttle down — altitude setpoint လျော့သည် |
-| ဘယ် stick ဘယ် (axis 0) | ဘယ်ဘက်သို့ strafe (`vy`) |
-| ဘယ် stick ညာ | ညာဘက်သို့ strafe (`vy`) |
-| ညာ stick အပေါ် (axis 3) | ရှေ့ (forward, `vx`) |
-| ညာ stick အောက် | နောက် (backward, `vx`) |
-| ညာ stick ဘယ် (axis 2) | Yaw — ဘယ်ဘက်သို့ လှည့်သည် |
-| ညာ stick ညာ | Yaw — ညာဘက်သို့ လှည့်သည် |
+| ဘယ် stick ဘယ် (axis 0) | Yaw — ဘယ်ဘက်သို့ လှည့်သည် |
+| ဘယ် stick ညာ | Yaw — ညာဘက်သို့ လှည့်သည် |
+| ညာ stick အပေါ် (axis 3) | Heading ဦးတည်ရာအတိုင်း ရှေ့ (forward, body-frame `vx`) |
+| ညာ stick အောက် | Heading ဦးတည်ရာနှင့် ဆန့်ကျင်ဘက် နောက် (backward, body-frame `vx`) |
+| ညာ stick ဘယ် (axis 2) | Heading ကို ရှေ့တည့်တည့်ထားပြီး ဘယ်ဘက်သို့ ဘေးတိုက် (strafe left, body-frame `vy`) |
+| ညာ stick ညာ | Heading ကို ရှေ့တည့်တည့်ထားပြီး ညာဘက်သို့ ဘေးတိုက် (strafe right, body-frame `vy`) |
 | D-pad အပေါ်/အောက် (axis 7) | Altitude ကို အနည်းငယ်တိုး/လျှော့သည် (D-pad analog axis မရှိသော joystick တွင် အလုပ်မလုပ်ပါ) |
 | X (button 2) | PX4 ကို Offboard mode သို့ပြောင်းပြီး arm လုပ်ရန် တောင်းဆိုသည် |
 | B (button 1) | Disarm လုပ်ရန် တောင်းဆိုသည်။ ဆင်းပြီးမှသာ နှိပ်ပါ |
@@ -24,7 +24,9 @@
 
 Neutral (stick center) တွင် axis တန်ဖိုးများ သုညသို့ ပြန်ရောက်ပြီး deadzone shaping က ၀ ပြန်ထုတ်ပေးသဖြင့် drone သည် hover ဖြစ်နေမည် — altitude၊ horizontal velocity နှင့် yaw rate အားလုံး သုညဖြစ်ကာ လက်ရှိ setpoint ကို ထိန်းထားသည်။
 
-Setpoint များသည် PX4 local NED frame ကို အသုံးပြုသည် (yaw rotation ဖြင့် body-frame သို့ မပြောင်းပါ)။ American hand convention အရ ဘယ် stick က throttle (altitude) နှင့် strafe (`vy`) ကို၊ ညာ stick က forward/backward (`vx`) နှင့် yaw ကို ထိန်းချုပ်သည်။ Joystick hardware/driver အလိုက် axis sign ကွဲပြားနိုင်သဖြင့် axis index နှင့် ပြောင်းပြန်ညွှန်ကြားမှုကို ROS parameter များဖြင့် သတ်မှတ်နိုင်သည်။
+Controller သည် ညာ stick မှ body-frame velocity (`vx` = heading အတိုင်းရှေ့၊ `vy` = heading ကို ရှေ့တည့်တည့်ထား၍ ညာဘက်) ကို တွက်ချက်ပြီး PX4 ၏ local NED frame (x=North, y=East) သို့ ယခု heading (`yaw_rad_`) ဖြင့် rotate လုပ်ပြီးမှသာ `TrajectorySetpoint.velocity` အဖြစ် ထုတ်လွှင့်သည် (`rotate_body_to_ned()`)။ ဤသည်မှာ ENU↔NED axis convention ပြောင်းခြင်း (fixed axis swap/flip) မဟုတ်ဘဲ၊ လက်ရှိ yaw angle ပေါ်မူတည်သော body-to-world rotation ဖြစ်သည် — ထို့ကြောင့် drone ၏ heading မည်သို့ပင်ပြောင်းသွားစေ "ရှေ့" ဆိုသည်မှာ အမြဲတမ်း camera/nose ဦးတည်ရာအတိုင်းသာ ဖြစ်နေမည်။
+
+Setpoint များသည် PX4 local NED frame ကို အသုံးပြုသည်။ Joystick hardware/driver အလိုက် axis sign ကွဲပြားနိုင်သဖြင့် axis index နှင့် ပြောင်းပြန်ညွှန်ကြားမှုကို ROS parameter များဖြင့် သတ်မှတ်နိုင်သည်။
 
 ဘယ် stick ၏ ဒေါင်လိုက် command ကို altitude setpoint တွင် ပေါင်းထည့်သည်။ D-pad သည် ထို altitude setpoint ကို ချိန်ညှိသည်။ Stick ကိုလွှတ်လျှင် altitude ကို ထိန်းထားသည်။ `joy_timeout_sec` အတွင်း `/joy` message မရလျှင် joystick ရွေ့လျားမှု command များကို သုညထားပြီး altitude ကို ထိန်းသည်။
 
