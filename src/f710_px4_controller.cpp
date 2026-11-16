@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -22,6 +23,18 @@ using namespace std::chrono_literals;
 
 class F710Px4Controller final : public rclcpp::Node
 {
+  static constexpr double kPrestreamDurationSec = 1.1;
+  static constexpr double kMaximumSetpointGapSec = 0.5;
+
+  enum class PendingAction
+  {
+    NONE,
+    ARM_OFFBOARD,
+    TAKEOFF,
+    LAND,
+    DISARM
+  };
+
 public:
   F710Px4Controller()
   : Node("f710_px4_controller"), last_tick_(std::chrono::steady_clock::now())
@@ -36,13 +49,13 @@ public:
     altitude_trim_speed_mps_ = declare_parameter<double>("altitude_trim_speed_mps", 0.8);
     deadzone_ = declare_parameter<double>("deadzone", 0.08);
 
-    invert_vx_axis_ = declare_parameter<bool>("invert_vx_axis", true);
-    invert_vy_axis_ = declare_parameter<bool>("invert_vy_axis", false);
-    invert_vz_axis_ = declare_parameter<bool>("invert_vz_axis", true);
+    invert_vx_axis_ = declare_parameter<bool>("invert_vx_axis", false);
+    invert_vy_axis_ = declare_parameter<bool>("invert_vy_axis", true);
+    invert_vz_axis_ = declare_parameter<bool>("invert_vz_axis", false);
     invert_yaw_axis_ = declare_parameter<bool>("invert_yaw_axis", true);
-    axis_vy_ = declare_parameter<int>("axis_vy", 3);
-    axis_vx_ = declare_parameter<int>("axis_vx", 4);
-    axis_yaw_ = declare_parameter<int>("axis_yaw", 0);
+    axis_vy_ = declare_parameter<int>("axis_vy", 0);
+    axis_vx_ = declare_parameter<int>("axis_vx", 3);
+    axis_yaw_ = declare_parameter<int>("axis_yaw", 2);
     axis_vz_ = declare_parameter<int>("axis_vz", 1);
     axis_dpad_vertical_ = declare_parameter<int>("axis_dpad_vertical", 7);
     button_arm_ = declare_parameter<int>("button_arm", 2);
@@ -50,8 +63,24 @@ public:
     button_takeoff_ = declare_parameter<int>("button_takeoff", 3);
     button_land_ = declare_parameter<int>("button_land", 0);
 
-    if (publish_rate_hz_ <= 0.0) {
-      throw std::invalid_argument("publish_rate_hz must be greater than zero");
+    // target_system <= 0 means "auto": derive from the trailing digits of the node
+    // namespace (e.g. /px4_1 -> instance 1 -> target_system 2), matching PX4 SITL's
+    // convention where MAV_SYS_ID = instance + 1.
+    int target_system_param = declare_parameter<int>("target_system", 0);
+    target_component_ = static_cast<uint8_t>(declare_parameter<int>("target_component", 1));
+    if (target_system_param <= 0) {
+      std::string ns = get_namespace();
+      std::size_t i = ns.size();
+      while (i > 0 && std::isdigit(static_cast<unsigned char>(ns[i - 1]))) {
+        --i;
+      }
+      const int instance = (i < ns.size()) ? std::stoi(ns.substr(i)) : 0;
+      target_system_param = instance + 1;
+    }
+    target_system_ = static_cast<uint8_t>(target_system_param);
+
+    if (publish_rate_hz_ <= 2.0) {
+      throw std::invalid_argument("publish_rate_hz must be greater than 2 Hz for PX4 Offboard");
     }
 
     const auto px4_qos = rclcpp::QoS(rclcpp::KeepLast(1))
@@ -69,7 +98,7 @@ public:
       std::bind(&F710Px4Controller::on_joy, this, std::placeholders::_1));
     local_position_subscription_ =
       create_subscription<px4_msgs::msg::VehicleLocalPosition>(
-      "fmu/out/vehicle_local_position", px4_qos,
+      "fmu/out/vehicle_local_position_v1", px4_qos,
       std::bind(&F710Px4Controller::on_local_position, this, std::placeholders::_1));
 
     timer_ = create_wall_timer(
@@ -78,8 +107,9 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Listening to %s; X: arm/Offboard, B: disarm, Y: takeoff, A: land.",
-      joy_topic_.c_str());
+      "Listening to %s; X: arm/Offboard, B: disarm, Y: takeoff, A: land. "
+      "target_system=%d target_component=%d",
+      joy_topic_.c_str(), target_system_, target_component_);
   }
 
 private:
@@ -121,38 +151,42 @@ private:
     dpad_altitude_rate_ = shape(axis_value(msg->axes, axis_dpad_vertical_, false)) *
       altitude_trim_speed_mps_;
 
-    const bool arm_pressed = button_pressed(msg->buttons, button_arm_);
-    const bool disarm_pressed = button_pressed(msg->buttons, button_disarm_);
+
     const bool takeoff_pressed = button_pressed(msg->buttons, button_takeoff_);
-    const bool land_pressed = button_pressed(msg->buttons, button_land_);
-    const bool arm_edge = arm_pressed && !button_pressed(last_buttons_, button_arm_);
-    const bool disarm_edge = disarm_pressed && !button_pressed(last_buttons_, button_disarm_);
+
+    const bool disarm_pressed = button_pressed(msg->buttons, button_arm_);// disarm
+    const bool land_pressed = button_pressed(msg->buttons, button_disarm_);// land
+    const bool arm_pressed= button_pressed(msg->buttons, button_land_);//arm
+
     const bool takeoff_edge = takeoff_pressed && !button_pressed(last_buttons_, button_takeoff_);
-    const bool land_edge = land_pressed && !button_pressed(last_buttons_, button_land_);
+
+    const bool disarm_edge = disarm_pressed&& !button_pressed(last_buttons_, button_arm_);//disarm
+    const bool land_edge = land_pressed && !button_pressed(last_buttons_, button_disarm_); // land
+    const bool arm_edge  = arm_pressed && !button_pressed(last_buttons_, button_land_);// arm
 
     if (arm_edge) {
-      arm_requested_ = true;
-      arm_sequence_ticks_ = 0;
-      RCLCPP_INFO(get_logger(), "Arm requested; streaming setpoints before mode/arm commands.");
+      request_action(PendingAction::ARM_OFFBOARD);
     }
     if (disarm_edge) {
-      publish_vehicle_command(
-        px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0F);
-      RCLCPP_INFO(get_logger(), "Disarm requested.");
+      request_action(PendingAction::DISARM);
     }
     if (takeoff_edge) {
-      takeoff_requested_ = true;
-      if (!arm_requested_) {
-        arm_requested_ = true;
-        arm_sequence_ticks_ = 0;
-      }
-      RCLCPP_INFO(get_logger(), "Takeoff requested to %.1f m.", takeoff_altitude_m_);
+      altitude_m_ = takeoff_altitude_m_;
+      request_action(PendingAction::TAKEOFF);
     }
     if (land_edge) {
-      publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND);
-      RCLCPP_INFO(get_logger(), "Land requested.");
+      request_action(PendingAction::LAND);
     }
     last_buttons_ = msg->buttons;
+  }
+
+  void request_action(PendingAction action)
+  {
+    pending_action_ = action;
+    offboard_streaming_enabled_ = true;
+    action_stream_started_at_.reset();
+    action_stream_last_at_.reset();
+    RCLCPP_INFO(get_logger(), "Action requested; streaming setpoints before command.");
   }
 
   void on_local_position(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg)
@@ -176,8 +210,8 @@ private:
     msg.param1 = param1;
     msg.param2 = param2;
     msg.command = command;
-    msg.target_system = 1;
-    msg.target_component = 1;
+    msg.target_system = target_system_;
+    msg.target_component = target_component_;
     msg.source_system = 1;
     msg.source_component = 1;
     msg.from_external = true;
@@ -197,15 +231,18 @@ private:
       vx_ = vy_ = vz_ = yaw_rate_ = dpad_altitude_rate_ = 0.0;
     }
 
+    // Once PX4 has been handed a LAND/DISARM command, stop streaming Offboard
+    // setpoints so PX4's own AUTO_LAND can take control and its land-detector
+    // can latch; otherwise our continuous Offboard stream keeps nav_state
+    // pinned to OFFBOARD and "Disarming denied: not landed" is emitted.
+    if (!offboard_streaming_enabled_) {
+      return;
+    }
+
     altitude_m_ = std::max(0.0, altitude_m_ + vz_ * dt);
     if (!joy_timed_out) {
       altitude_m_ = std::max(0.0, altitude_m_ + dpad_altitude_rate_ * dt);
     }
-    if (takeoff_requested_) {
-      altitude_m_ = takeoff_altitude_m_;
-      takeoff_requested_ = false;
-    }
-
     yaw_rad_ = std::atan2(
       std::sin(yaw_rad_ + yaw_rate_ * dt), std::cos(yaw_rad_ + yaw_rate_ * dt));
 
@@ -223,18 +260,53 @@ private:
     setpoint.yawspeed = nan;
     setpoint_publisher_->publish(setpoint);
 
-    if (arm_requested_ && have_local_position_) {
-      ++arm_sequence_ticks_;
-      const auto required_ticks = std::max(
-        10, static_cast<int>(std::ceil(publish_rate_hz_)));
-      if (arm_sequence_ticks_ == required_ticks) {
-        // PX4 custom main mode OFFBOARD is 6.
-        publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 6.0F);
-        publish_vehicle_command(
-          px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0F);
-        arm_requested_ = false;
+    if (pending_action_ != PendingAction::NONE) {
+      if (!action_stream_started_at_ || !action_stream_last_at_ ||
+        std::chrono::duration<double>(now - *action_stream_last_at_).count() >
+        kMaximumSetpointGapSec)
+      {
+        action_stream_started_at_ = now;
+      }
+      action_stream_last_at_ = now;
+
+      const bool needs_local_position =
+        pending_action_ == PendingAction::ARM_OFFBOARD ||
+        pending_action_ == PendingAction::TAKEOFF;
+      if (std::chrono::duration<double>(now - *action_stream_started_at_).count() >=
+        kPrestreamDurationSec && (!needs_local_position || have_local_position_))
+      {
+        execute_pending_action();
       }
     }
+  }
+
+  void execute_pending_action()
+  {
+    switch (pending_action_) {
+      case PendingAction::ARM_OFFBOARD:
+      case PendingAction::TAKEOFF:
+        // PX4 custom main mode OFFBOARD is 6.
+        publish_vehicle_command(
+          px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0F, 6.0F);
+        publish_vehicle_command(
+          px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0F);
+        break;
+      case PendingAction::LAND:
+        publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND);
+        offboard_streaming_enabled_ = false;
+        break;
+      case PendingAction::DISARM:
+        publish_vehicle_command(
+          px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0F);
+        offboard_streaming_enabled_ = false;
+        break;
+      case PendingAction::NONE:
+        return;
+    }
+
+    pending_action_ = PendingAction::NONE;
+    action_stream_started_at_.reset();
+    action_stream_last_at_.reset();
   }
 
   std::string joy_topic_;
@@ -246,19 +318,21 @@ private:
   double max_yaw_rate_rps_{1.5};
   double altitude_trim_speed_mps_{0.8};
   double deadzone_{0.08};
-  bool invert_vx_axis_{true};
-  bool invert_vy_axis_{false};
-  bool invert_vz_axis_{true};
+  bool invert_vx_axis_{false};
+  bool invert_vy_axis_{true};
+  bool invert_vz_axis_{false};
   bool invert_yaw_axis_{true};
-  int axis_vy_{3};
-  int axis_vx_{4};
-  int axis_yaw_{0};
+  int axis_vy_{0};
+  int axis_vx_{3};
+  int axis_yaw_{2};
   int axis_vz_{1};
   int axis_dpad_vertical_{7};
   int button_arm_{2};
   int button_disarm_{1};
   int button_takeoff_{3};
   int button_land_{0};
+  uint8_t target_system_{1};
+  uint8_t target_component_{1};
 
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_publisher_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr setpoint_publisher_;
@@ -270,6 +344,8 @@ private:
 
   std::chrono::steady_clock::time_point last_tick_;
   std::optional<std::chrono::steady_clock::time_point> last_joy_time_;
+  std::optional<std::chrono::steady_clock::time_point> action_stream_started_at_;
+  std::optional<std::chrono::steady_clock::time_point> action_stream_last_at_;
   std::vector<int32_t> last_buttons_;
   double altitude_m_{0.0};
   double yaw_rad_{0.0};
@@ -279,9 +355,8 @@ private:
   double yaw_rate_{0.0};
   double dpad_altitude_rate_{0.0};
   bool have_local_position_{false};
-  bool arm_requested_{false};
-  int arm_sequence_ticks_{0};
-  bool takeoff_requested_{false};
+  bool offboard_streaming_enabled_{true};
+  PendingAction pending_action_{PendingAction::NONE};
 };
 
 int main(int argc, char * argv[])
