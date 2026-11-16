@@ -8,17 +8,21 @@
 
 | Input | လုပ်ဆောင်ချက် |
 |---|---|
-| ဘယ် stick အပေါ်အောက် (axis 1) | ဒေါင်လိုက်အမြန်နှုန်း၊ အပေါ်တင်လျှင် တက်ပြီး အောက်ဆွဲလျှင် ဆင်းသည် |
+| ဘယ် stick အပေါ်အောက် (axis 1) | အမြင့် setpoint ကို တိုး/လျှော့သည် |
 | ဘယ် stick ဘယ်ညာ (axis 0) | Yaw လှည့်နှုန်း |
 | ညာ stick အပေါ်အောက် (axis 4) | ရှေ့/နောက် အမြန်နှုန်း (`vx`) |
 | ညာ stick ဘယ်ညာ (axis 3) | ညာ/ဘယ် အမြန်နှုန်း (`vy`) |
 | D-pad အပေါ်/အောက် (axis 7) | Altitude ကို အနည်းငယ်တိုး/လျှော့သည် |
-| X (button 2) | Offboard mode နှင့် arm ကို တောင်းဆိုသည် |
-| Y (button 3) | `takeoff_altitude_m` အမြင့်သို့တက်သည်၊ လိုအပ်ပါက Offboard/arm ကိုပါ တောင်းဆိုသည် |
+| X (button 2) | PX4 ကို Offboard mode သို့ပြောင်းပြီး arm လုပ်ရန် တောင်းဆိုသည် |
+| B (button 1) | Disarm လုပ်ရန် တောင်းဆိုသည်။ ဆင်းပြီးမှသာ နှိပ်ပါ |
+| Y (button 3) | `takeoff_altitude_m` အမြင့်သို့တက်သည်။ လိုအပ်ပါက Offboard/arm ကိုပါ တောင်းဆိုသည် |
+| A (button 0) | PX4 land command ပို့သည် |
 
-Horizontal velocity နှင့် position/yaw တို့သည် PX4 local NED frame ကို အသုံးပြုသည်။ Controller သည် ပုံမှန် F710 stick ဦးတည်ချက်ကို သဘာဝကျသော တက်/ရှေ့/ညာ command များအဖြစ် ပြောင်းပေးသည်။ F710 mode နှင့် Linux driver mapping ကွဲပြားနိုင်သဖြင့် axis/button index နှင့် ပြောင်းပြန်ညွှန်ကြားမှုကို ROS parameter များဖြင့် သတ်မှတ်နိုင်သည်။
+Setpoint များသည် PX4 local NED frame ကို အသုံးပြုသည်။ Controller သည် ပုံမှန် F710 stick ဦးတည်ချက်ကို သဘာဝကျသော တက်/ရှေ့/ညာ command များအဖြစ် ပြောင်းပေးသည်။ F710 mode နှင့် Linux driver mapping ကွဲပြားနိုင်သဖြင့် axis/button index နှင့် ပြောင်းပြန်ညွှန်ကြားမှုကို ROS parameter များဖြင့် သတ်မှတ်နိုင်သည်။
 
 ဘယ် stick ၏ ဒေါင်လိုက် command ကို altitude setpoint တွင် ပေါင်းထည့်ပြီး ညာ stick က horizontal velocity ကို ထိန်းချုပ်သည်။ D-pad သည် ထို altitude setpoint ကို ချိန်ညှိသည်။ Stick ကိုလွှတ်လျှင် altitude ကို ထိန်းထားသည်။ `joy_timeout_sec` အတွင်း `/joy` message မရလျှင် joystick ရွေ့လျားမှု command များကို သုညထားပြီး altitude ကို ထိန်းသည်။
+
+Joystick ဖြင့် မောင်းရန် PX4 ၏ **Offboard flight mode** ကို အသုံးပြုပါ။ Velocity နှင့် position သည် flight mode များမဟုတ်ဘဲ Offboard ထံပို့သည့် setpoint ပုံစံများဖြစ်သည်။ ယခု controller သည် ရှေ့/ဘေးရွေ့လျားမှုကို velocity setpoint ဖြင့်၊ အမြင့်ကို position setpoint ဖြင့် ထိန်းထားသော ပေါင်းစပ်ပုံစံကို သုံးထားသည်။ ထို့ကြောင့် joystick ကိုလွှတ်လျှင် အမြင့်မကျဘဲ ဆက်ထိန်းနိုင်သည်။
 
 ## $\color{red}{\text{လိုအပ်ချက်များ}}$
 
@@ -39,8 +43,11 @@ colcon build --packages-up-to ct_joy
 source install/setup.bash
 ros2 launch ct_joy ct_joy_controller.launch.py
 ```
+```bash
+ros2 launch ct_joy ct_joy_controller.launch.py px4_namespace:=px4_2
+```
 
-အခြား PX4 namespace သုံးရန် `px4_namespace` launch argument ကို သတ်မှတ်နိုင်သည်။ ဥပမာ `ros2 launch ct_joy ct_joy_controller.launch.py px4_namespace:=px4_2` ဖြစ်သည်။ Controller layout ကို `ros2 topic echo /joy` ဖြင့်စစ်ပြီး PX4 topic များကို `ros2 topic list | grep /fmu` ဖြင့် အတည်ပြုပါ။ X/Y သည် နှိပ်ချိန်တစ်ကြိမ်စီသာ အလုပ်လုပ်သည်။ X ကိုနှိပ်၍ arm လုပ်ပြီးနောက် Y ကိုနှိပ်၍ takeoff လုပ်ပါ။ ဤ package တွင် disarm ခလုတ် မသတ်မှတ်ထားပါ။ ယာဉ်အတွက် သင့်လျော်သောနည်းလမ်းကို ရွေးချယ်ပါ။
+အခြား PX4 namespace သုံးရန် `px4_namespace` launch argument ကို သတ်မှတ်နိုင်သည်။ ဥပမာ `ros2 launch ct_joy ct_joy_controller.launch.py px4_namespace:=px4_2` ဖြစ်သည်။ Controller layout ကို `ros2 topic echo /joy` ဖြင့်စစ်ပြီး PX4 topic များကို `ros2 topic list | grep /fmu` ဖြင့် အတည်ပြုပါ။ X/B/Y/A ခလုတ်များသည် တစ်ကြိမ်နှိပ်တိုင်း တစ်ကြိမ်သာ အလုပ်လုပ်သည်။ X ကိုနှိပ်၍ arm လုပ်၊ Y ဖြင့် takeoff၊ A ဖြင့် land လုပ်ပြီး ဆင်းပြီးမှ B ဖြင့် disarm လုပ်ပါ။ ခလုတ်အညွှန်းများကွဲပါက အပေါ်ရှိ button index များကို `ros2 topic echo /joy` ဖြင့်စစ်ပါ။
 
 ## $\color{red}{\text{အသုံးဝင်သော parameter များ}}$
 
@@ -51,7 +58,7 @@ ros2 run ct_joy ct_joy --ros-args \
   -p takeoff_altitude_m:=3.0 -p max_horizontal_speed_mps:=2.0
 ```
 
-Parameter များတွင် `joy_topic`, `publish_rate_hz`, `joy_timeout_sec`, `takeoff_altitude_m`, `max_horizontal_speed_mps`, `max_vertical_speed_mps`, `max_yaw_rate_rps`, `altitude_trim_speed_mps`, `deadzone`, axis index လေးခု၊ D-pad axis၊ button index နှစ်ခုနှင့် `invert_*_axis` flag များ ပါဝင်သည်။
+Parameter များတွင် `joy_topic`, `publish_rate_hz`, `joy_timeout_sec`, `takeoff_altitude_m`, `max_horizontal_speed_mps`, `max_vertical_speed_mps`, `max_yaw_rate_rps`, `altitude_trim_speed_mps`, `deadzone`, axis index များ၊ D-pad axis၊ `button_arm`, `button_disarm`, `button_takeoff`, `button_land` နှင့် `invert_*_axis` flag များ ပါဝင်သည်။
 
 ## $\color{red}{\text{PX4 မှတ်ချက်များ}}$
 

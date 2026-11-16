@@ -46,7 +46,9 @@ public:
     axis_vz_ = declare_parameter<int>("axis_vz", 1);
     axis_dpad_vertical_ = declare_parameter<int>("axis_dpad_vertical", 7);
     button_arm_ = declare_parameter<int>("button_arm", 2);
+    button_disarm_ = declare_parameter<int>("button_disarm", 1);
     button_takeoff_ = declare_parameter<int>("button_takeoff", 3);
+    button_land_ = declare_parameter<int>("button_land", 0);
 
     if (publish_rate_hz_ <= 0.0) {
       throw std::invalid_argument("publish_rate_hz must be greater than zero");
@@ -75,7 +77,8 @@ public:
       std::bind(&F710Px4Controller::on_timer, this));
 
     RCLCPP_INFO(
-      get_logger(), "Listening to %s; press X to arm into Offboard, press Y to take off.",
+      get_logger(),
+      "Listening to %s; X: arm/Offboard, B: disarm, Y: takeoff, A: land.",
       joy_topic_.c_str());
   }
 
@@ -119,14 +122,23 @@ private:
       altitude_trim_speed_mps_;
 
     const bool arm_pressed = button_pressed(msg->buttons, button_arm_);
+    const bool disarm_pressed = button_pressed(msg->buttons, button_disarm_);
     const bool takeoff_pressed = button_pressed(msg->buttons, button_takeoff_);
+    const bool land_pressed = button_pressed(msg->buttons, button_land_);
     const bool arm_edge = arm_pressed && !button_pressed(last_buttons_, button_arm_);
+    const bool disarm_edge = disarm_pressed && !button_pressed(last_buttons_, button_disarm_);
     const bool takeoff_edge = takeoff_pressed && !button_pressed(last_buttons_, button_takeoff_);
+    const bool land_edge = land_pressed && !button_pressed(last_buttons_, button_land_);
 
     if (arm_edge) {
       arm_requested_ = true;
       arm_sequence_ticks_ = 0;
       RCLCPP_INFO(get_logger(), "Arm requested; streaming setpoints before mode/arm commands.");
+    }
+    if (disarm_edge) {
+      publish_vehicle_command(
+        px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0F);
+      RCLCPP_INFO(get_logger(), "Disarm requested.");
     }
     if (takeoff_edge) {
       takeoff_requested_ = true;
@@ -135,6 +147,10 @@ private:
         arm_sequence_ticks_ = 0;
       }
       RCLCPP_INFO(get_logger(), "Takeoff requested to %.1f m.", takeoff_altitude_m_);
+    }
+    if (land_edge) {
+      publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND);
+      RCLCPP_INFO(get_logger(), "Land requested.");
     }
     last_buttons_ = msg->buttons;
   }
@@ -240,7 +256,9 @@ private:
   int axis_vz_{1};
   int axis_dpad_vertical_{7};
   int button_arm_{2};
+  int button_disarm_{1};
   int button_takeoff_{3};
+  int button_land_{0};
 
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_publisher_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr setpoint_publisher_;
