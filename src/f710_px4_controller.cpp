@@ -48,15 +48,7 @@ public:
     publish_rate_hz_ = declare_parameter<double>("publish_rate_hz", 20.0);
     joy_timeout_sec_ = declare_parameter<double>("joy_timeout_sec", 0.5);
     takeoff_altitude_m_ = declare_parameter<double>("takeoff_altitude_m", 2.0);
-    max_horizontal_speed_mps_ = std::min(
-      declare_parameter<double>("max_horizontal_speed_mps", 3.0), speed_limits_.horizontal_speed);
-    max_vertical_speed_mps_ = declare_parameter<double>("max_vertical_speed_mps", 1.0);
-    max_yaw_rate_rps_ = std::min(
-      declare_parameter<double>("max_yaw_rate_rps", 1.5), speed_limits_.max_yaw_rate_rad_s);
-    // Write the clamped values back so `ros2 param get` reflects what the
-    // vehicle actually obeys, not whatever was requested above the YAML cap.
-    set_parameter(rclcpp::Parameter("max_horizontal_speed_mps", max_horizontal_speed_mps_));
-    set_parameter(rclcpp::Parameter("max_yaw_rate_rps", max_yaw_rate_rps_));
+    command_limits_ = ct_joy::declare_command_limits(*this, speed_limits_);
     altitude_trim_speed_mps_ = declare_parameter<double>("altitude_trim_speed_mps", 0.8);
     deadzone_ = declare_parameter<double>("deadzone", 0.08);
 
@@ -167,18 +159,20 @@ private:
   void on_joy(const sensor_msgs::msg::Joy::SharedPtr msg)
   {
     last_joy_time_ = std::chrono::steady_clock::now();
+    const double horizontal_limit = std::min(
+      command_limits_.horizontal_speed, command_limits_.position_mode_horizontal_speed);
     vx_ = shape(axis_value(msg->axes, axis_vx_, invert_vx_axis_)) *
-      max_horizontal_speed_mps_;
+      horizontal_limit;
     vy_ = shape(axis_value(msg->axes, axis_vy_, invert_vy_axis_)) *
-      max_horizontal_speed_mps_;
-    vz_ = ct_joy::clamp_vertical_rate(
-      shape(axis_value(msg->axes, axis_vz_, invert_vz_axis_)) * max_vertical_speed_mps_,
-      speed_limits_);
+      horizontal_limit;
+    ct_joy::clamp_horizontal_velocity(vx_, vy_, horizontal_limit);
+    const double vertical_input = shape(axis_value(msg->axes, axis_vz_, invert_vz_axis_));
+    vz_ = vertical_input * (vertical_input >= 0.0 ?
+      command_limits_.vertical_speed_up : command_limits_.vertical_speed_down);
     yaw_rate_ = shape(axis_value(msg->axes, axis_yaw_, invert_yaw_axis_)) *
-      max_yaw_rate_rps_;
-    dpad_altitude_rate_ = ct_joy::clamp_vertical_rate(
-      shape(axis_value(msg->axes, axis_dpad_vertical_, false)) * altitude_trim_speed_mps_,
-      speed_limits_);
+      command_limits_.yaw_rate_rad_s;
+    dpad_altitude_rate_ =
+      shape(axis_value(msg->axes, axis_dpad_vertical_, false)) * altitude_trim_speed_mps_;
 
 
     const bool takeoff_pressed = button_pressed(msg->buttons, button_takeoff_);
@@ -268,10 +262,9 @@ private:
       return;
     }
 
-    altitude_m_ = std::max(0.0, altitude_m_ + vz_ * dt);
-    if (!joy_timed_out) {
-      altitude_m_ = std::max(0.0, altitude_m_ + dpad_altitude_rate_ * dt);
-    }
+    const double vertical_rate = ct_joy::clamp_vertical_rate(
+      vz_ + dpad_altitude_rate_, command_limits_);
+    altitude_m_ = std::max(0.0, altitude_m_ + vertical_rate * dt);
     yaw_rad_ = std::atan2(
       std::sin(yaw_rad_ + yaw_rate_ * dt), std::cos(yaw_rad_ + yaw_rate_ * dt));
 
@@ -345,9 +338,6 @@ private:
   double publish_rate_hz_{20.0};
   double joy_timeout_sec_{0.5};
   double takeoff_altitude_m_{2.0};
-  double max_horizontal_speed_mps_{3.0};
-  double max_vertical_speed_mps_{1.0};
-  double max_yaw_rate_rps_{1.5};
   double altitude_trim_speed_mps_{0.8};
   double deadzone_{0.08};
   bool invert_vx_axis_{false};
@@ -366,6 +356,7 @@ private:
   uint8_t target_system_{1};
   uint8_t target_component_{1};
   ct_joy::JoySpeedLimits speed_limits_{};
+  ct_joy::JoyCommandLimits command_limits_{};
 
   rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr offboard_publisher_;
   rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr setpoint_publisher_;

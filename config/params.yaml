@@ -1,9 +1,15 @@
 ct_joy:
   ros__parameters:
+    # ----------------------------------- DEFAULT SPEED COMMANDS
     # this come from MPC_XY_VEL_MAX,
     horizontal_speed: 12.0
+    d_gain: 1.0
 
-    # this come from MPC_Z_VEL_MAX_UP / MPC_Z_VEL_MAX_DN
+
+    # this come from MPC_VEL_MANUAL
+    position_mode_horizontal_speed: 10.0
+
+    # this come from MPC_Z_VEL_MAX_UP, MPC_Z_VEL_MAX_DN
     z_vel_max_speed_up: 3.0
     z_vel_max_speed_down: 1.5
 
@@ -15,3 +21,4 @@ ct_joy:
     # Manual Mode အတွက် Maximum Yaw Rate Limit
     # this come from MPC_MAN_Y_MAX
     mpc_man_y_max: 150.0000
+    # ----------------------------------- DEFAULT SPEED COMMANDS

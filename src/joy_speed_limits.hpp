@@ -12,10 +12,21 @@ namespace ct_joy
 // commands) to radians/s.
 struct JoySpeedLimits
 {
-	double horizontal_speed = 0.0;
-	double z_vel_max_speed_up = 0.0;
-	double z_vel_max_speed_down = 0.0;
-	double max_yaw_rate_rad_s = 0.0;
+  double horizontal_speed = 0.0;
+  double d_gain = 0.0;
+  double position_mode_horizontal_speed = 0.0;
+  double z_vel_max_speed_up = 0.0;
+  double z_vel_max_speed_down = 0.0;
+  double max_yaw_rate_rad_s = 0.0;
+};
+
+struct JoyCommandLimits
+{
+  double horizontal_speed = 0.0;
+  double position_mode_horizontal_speed = 0.0;
+  double vertical_speed_up = 0.0;
+  double vertical_speed_down = 0.0;
+  double yaw_rate_rad_s = 0.0;
 };
 
 // Loads config/params.yaml directly from the ct_joy package share directory
@@ -27,14 +38,15 @@ struct JoySpeedLimits
 JoySpeedLimits load_joy_speed_limits();
 
 // Throws std::invalid_argument if `node` was given a ROS parameter override
-// for horizontal_speed, z_vel_max_speed_up, z_vel_max_speed_down,
-// mpc_yawrate_auto_max, or mpc_man_y_max; those may only be set by editing
-// config/params.yaml, never via `--ros-args -p` or a launch file.
+// for any key in config/params.yaml. Other node parameters may be overridden.
 void reject_speed_limit_overrides(rclcpp::Node & node);
 
-// Clamps a requested vertical rate (m/s, NED-style sign: positive = climb)
-// asymmetrically: positive values are capped at limits.z_vel_max_speed_up,
-// negative values at -limits.z_vel_max_speed_down.
-double clamp_vertical_rate(double rate_mps, const JoySpeedLimits & limits);
+JoyCommandLimits declare_command_limits(rclcpp::Node & node, const JoySpeedLimits & limits);
+
+// Positive vertical rate is climb; negative is descent.
+double clamp_vertical_rate(double rate_mps, const JoyCommandLimits & limits);
+
+void clamp_horizontal_velocity(
+  double & vx_mps, double & vy_mps, double max_speed_mps);
 
 }  // namespace ct_joy
